@@ -18,3 +18,6 @@ class LearnablePositionalEncoding(nn.Module):
         if not self.batch_first:
             pos_embed = pos_embed.permute(1, 0, 2) # [N, 1, D]
         return x + pos_embed
+    
+class MHAModel(nn.Module):
+    pass
