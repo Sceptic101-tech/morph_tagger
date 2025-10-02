@@ -1,7 +1,6 @@
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 class LearnablePositionalEncoding(nn.Module):
     '''Обучаемое позиционное кодирование'''
@@ -48,14 +47,15 @@ class EncoderBlock(nn.Module):
 # На данный момент используется только одна ff сеть для классификации ОДНОГО признака для каждого токена
 
 class MHAModel(nn.Module):
-    def __init__(self, max_seq_len:int, num_embeddings:int, embedding_dim:int, attention_dim:int, num_heads:int, num_layers:int, dim_classifier_ff_hidden:int, dim_encoder_ff:int, num_cls:int,\
-                    dropout:float, temperature:float, batch_first:bool, bias:bool=True, padding_idx:int=0):
+    def __init__(self, max_seq_len:int, num_embeddings:int, embedding_dim:int, attention_dim:int, num_heads:int, num_layers:int, dim_classifier_ff_hidden:int, dim_encoder_ff:int,\
+                 classifiers_names_opt:dict[str, int], dropout:float, temperature:float, batch_first:bool, bias:bool=True, padding_idx:int=0):
         super().__init__()
 
         self.batch_first = batch_first
         self.padding_idx = padding_idx
         self.num_layers = num_layers
         self.temperature = temperature
+        self.classifiers_count = len(classifiers_names_opt)
 
         self.embedings = nn.Embedding(num_embeddings, embedding_dim, padding_idx)
         self.positional_encoding = LearnablePositionalEncoding(embedding_dim, max_seq_len, padding_idx, batch_first)
@@ -63,11 +63,14 @@ class MHAModel(nn.Module):
         self.layer_norm = nn.LayerNorm(attention_dim)
         self.encoder_stack = nn.ModuleList([EncoderBlock(attention_dim, num_heads, dropout, dim_encoder_ff, bias, batch_first) for _ in range(num_layers)])
 
-        self.classifier = nn.Sequential(
-            nn.Linear(attention_dim, dim_classifier_ff_hidden, bias),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(dim_classifier_ff_hidden, num_cls, bias))
+        self.final_classifiers = nn.ModuleDict({key:nn.Sequential(
+            nn.Linear(attention_dim, dim_classifier_ff_hidden, bias), nn.GELU(), nn.Dropout(dropout), nn.Linear(dim_classifier_ff_hidden, value, bias))\
+                for key, value in classifiers_names_opt.items()})
+        # self.classifier = nn.Sequential(
+        #     nn.Linear(attention_dim, dim_classifier_ff_hidden, bias),
+        #     nn.GELU(),
+        #     nn.Dropout(dropout),
+        #     nn.Linear(dim_classifier_ff_hidden, num_cls, bias))
 
     def forward(self, x, apply_softmax:bool=True):
         # x [B, S]

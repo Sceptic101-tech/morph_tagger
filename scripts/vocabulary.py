@@ -6,8 +6,8 @@ class Vocabulary:
     
     Внутри хранит два отображения: token->idx и idx->token, а также специальные токены (MASK, UNK, BOS, EOS)
     """
-    def __init__(self, token_to_idx:dict=None, bos_token:str='<BOS>', eos_token:str='<EOS>', mask_token:str='<MASK>', unk_token='<UNK>', add_auxiliary_tokens:bool=True):
-        self.add_auxiliary_tokens = add_auxiliary_tokens
+    def __init__(self, token_to_idx:dict=None, bos_token:str='<BOS>', eos_token:str='<EOS>', mask_token:str='<MASK>', unk_token='<UNK>', add_bos_eos_tokens:bool=True):
+        self.add_bos_eos_tokens = add_bos_eos_tokens
         self.bos_token = bos_token
         self.eos_token = eos_token
         self.mask_token = mask_token
@@ -19,11 +19,11 @@ class Vocabulary:
         else:
             self.token_to_idx = {}
             self.idx_to_token = {}
-            if add_auxiliary_tokens:
-                self.mask_idx = self.add_token(mask_token)
+            self.mask_idx = self.add_token(mask_token)
+            self.unk_idx = self.add_token(unk_token)
+            if add_bos_eos_tokens:
                 self.bos_idx = self.add_token(bos_token)
                 self.eos_idx = self.add_token(eos_token)
-                self.unk_idx = self.add_token(unk_token)
 
     def add_token(self, token:str)->int:
         """Добавляет токен в словарь. Возвращает индекс токена"""
@@ -35,7 +35,7 @@ class Vocabulary:
         else:
             return self.token_to_idx[token]
         
-    def add_tokens(self, tokens)->list[int]:
+    def add_tokens(self, tokens:list[str])->list[int]:
         return [self.add_token(token) for token in tokens]
         
     def to_serializable(self) -> dict:
@@ -48,7 +48,7 @@ class Vocabulary:
             'eos_token': self.eos_token,
             'mask_token': self.mask_token,
             'unk_token': self.unk_token,
-            'add_auxiliary_tokens': self.add_auxiliary_tokens}
+            'add_auxiliary_tokens': self.add_bos_eos_tokens}
 
     @classmethod
     def from_serializable(cls, serializable: dict):
