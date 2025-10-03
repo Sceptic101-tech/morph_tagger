@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 
+
 class LearnablePositionalEncoding(nn.Module):
     '''Обучаемое позиционное кодирование'''
     def __init__(self, embed_dim:int, max_seq_len:int, padding_idx:int, batch_first:bool):
@@ -11,13 +12,17 @@ class LearnablePositionalEncoding(nn.Module):
 
     def forward(self, x:torch.Tensor):
         # x [B, N, D]
-        seq_count = x.size(1) if self.batch_first else x.size(0)
-        pos_idx = torch.arange(0, seq_count, dtype=torch.long, device=x.device).unsqueeze(0) # [1, N]
-        pos_embed = self.pos_embedings(pos_idx) # [1, N, D]
-        if not self.batch_first:
-            pos_embed = pos_embed.permute(1, 0, 2) # [N, 1, D]
+        if self.batch_first:
+            seq_len = x.size(1)
+            pos_idx = torch.arange(seq_len, device=x.device).unsqueeze(0)  # [1, S]
+        else:
+            seq_len = x.size(0)
+            pos_idx = torch.arange(seq_len, device=x.device).unsqueeze(1)  # [S, 1]
+        
+        pos_embed = self.pos_embedings(pos_idx) # [1, S, D] | [S, 1, D]
         return x + pos_embed
-    
+
+
 class EncoderBlock(nn.Module):
     '''Блок энкодера с многоловым вниманием и полносвязной сетью'''
     def __init__(self, attention_dim, num_heads, dropout, dim_encoder_ff, bias:bool=True, batch_first:bool=True):
@@ -43,19 +48,19 @@ class EncoderBlock(nn.Module):
         x = x + self.dropout1(attention_out) # residual
         encoder_out = self.encoder_ff(self.norm2(x))
         return self.norm3(x + encoder_out)
-    
-# На данный момент используется только одна ff сеть для классификации ОДНОГО признака для каждого токена
+
 
 class MHAModel(nn.Module):
     def __init__(self, max_seq_len:int, num_embeddings:int, embedding_dim:int, attention_dim:int, num_heads:int, num_layers:int, dim_classifier_ff_hidden:int, dim_encoder_ff:int,\
-                 classifiers_names_opt:dict[str, int], dropout:float, temperature:float, batch_first:bool, bias:bool=True, padding_idx:int=0):
+                 classifiers_names_params:dict[str, int], dropout:float, temperature:float, batch_first:bool, bias:bool=True, padding_idx:int=0):
+        # classifiers_names_params: ожидается словарь, где ключ - название признака, а значение - размерность словаря признака
         super().__init__()
 
         self.batch_first = batch_first
         self.padding_idx = padding_idx
         self.num_layers = num_layers
         self.temperature = temperature
-        self.classifiers_count = len(classifiers_names_opt)
+        self.classifiers_names_params = classifiers_names_params
 
         self.embedings = nn.Embedding(num_embeddings, embedding_dim, padding_idx)
         self.positional_encoding = LearnablePositionalEncoding(embedding_dim, max_seq_len, padding_idx, batch_first)
@@ -65,24 +70,24 @@ class MHAModel(nn.Module):
 
         self.final_classifiers = nn.ModuleDict({key:nn.Sequential(
             nn.Linear(attention_dim, dim_classifier_ff_hidden, bias), nn.GELU(), nn.Dropout(dropout), nn.Linear(dim_classifier_ff_hidden, value, bias))\
-                for key, value in classifiers_names_opt.items()})
-        # self.classifier = nn.Sequential(
-        #     nn.Linear(attention_dim, dim_classifier_ff_hidden, bias),
-        #     nn.GELU(),
-        #     nn.Dropout(dropout),
-        #     nn.Linear(dim_classifier_ff_hidden, num_cls, bias))
+                for key, value in classifiers_names_params.items()})
 
-    def forward(self, x, apply_softmax:bool=True):
+
+    def forward(self, x, apply_softmax:bool=False)->dict[str:torch.Tensor]:
         # x [B, S]
-        key_padding_mask = x == self.padding_idx
+        key_padding_mask = (x == self.padding_idx)
         embedded = self.embedings(x) # [B, S, E]
         embedded = self.positional_encoding(embedded)
         x = self.embed_to_encod_proj(embedded) # [B, S, D]
         x = self.layer_norm(x)
         for layer in range(self.num_layers):
             x = self.encoder_stack[layer](x, key_padding_mask)
+        # x [B, S, D]
+        logits = {}
+        for key, value in self.classifiers_names_params.items():
+            logits[key] = self.final_classifiers[key](x) # [B, S, num_classes_key]
 
-        logits = self.classifier(x) # [B, S, num_classes]
         if apply_softmax:
-            logits = nn.functional.softmax(logits/self.temperature, dim=-1)
+            for key, value in logits.items():
+                logits[key] = nn.functional.softmax(logits[key]/self.temperature, dim=-1)
         return logits

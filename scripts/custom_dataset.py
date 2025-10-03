@@ -1,5 +1,5 @@
 class CustomDataset:
-    def __init__(self, train_df, test_df, valid_df, vectorizer, target_names:list[str]):
+    def __init__(self, vectorizer, train_df, target_names:list[str], test_df=None, valid_df=None,):
         self._train_df = train_df
         self._test_df = test_df
         self._valid_df = valid_df
@@ -22,7 +22,7 @@ class CustomDataset:
         return len(self.cw_df)
 
     def __getitem__(self, index:int):
-        '''Возвращает словарь {source_x : source_vec, target_names : target_vec}'''
+        '''Возвращает словарь {source_x : source_vec(list[int]), target_names : target_vecs(list[int])}'''
         row = self.cw_df.iloc[index]
         src_vectorized, trg_vectorized = self.vectorizer.vectorize(row, self.target_names, use_vocab_max_len=True)
         vectorized = {key: value for key, value in trg_vectorized.items()}
