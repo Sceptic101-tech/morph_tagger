@@ -43,7 +43,11 @@ class Vectorizer:
         src_vectorized = self._vectorize(src_indices, use_vocab_max_len)
         trg_vectorized = {}
         for target_name in target_names:
-            trg_indices = self.get_indices(df_row[target_name], self.trg_vocabs[target_name], add_bos=False, add_eos=False)
+            trg_indices = [self.mask_idx] # для BOS
+            trg_indices.extend(self.get_indices(df_row[target_name], self.trg_vocabs[target_name], 
+                                            add_bos=False, add_eos=False))
+            trg_indices.append(self.mask_idx) # для EOS
+            # trg_indices = self.get_indices(df_row[target_name], self.trg_vocabs[target_name], add_bos=False, add_eos=False)
             trg_vectorized[target_name] = self._vectorize(trg_indices, use_vocab_max_len)
         
         return (src_vectorized, trg_vectorized)

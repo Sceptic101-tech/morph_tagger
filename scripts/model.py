@@ -36,18 +36,17 @@ class EncoderBlock(nn.Module):
         self.dropout1 = nn.Dropout(dropout)
         self.norm2 = nn.LayerNorm(attention_dim)
 
-        self.encoder_ff =  nn.Sequential(nn.Linear(attention_dim, dim_encoder_ff, bias), nn.GELU(), nn.Dropout(dropout),\
+        self.encoder_ff =  nn.Sequential(nn.Linear(attention_dim, dim_encoder_ff, bias), nn.ReLU(), nn.Dropout(dropout),\
                                          nn.Linear(dim_encoder_ff, attention_dim, bias), nn.Dropout(dropout))
-        self.norm3 = nn.LayerNorm(attention_dim)
     
     def forward(self, x, key_padding_mask):
         x_norm = self.norm1(x)
-        query, key, value = self.query_ff(x_norm), self.key_ff(x_norm), self.value_ff(x_norm)
+        query, key, value = (self.query_ff(x_norm), self.key_ff(x_norm), self.value_ff(x_norm))
 
         attention_out, attention_out_weights = self.attention(query, key, value, key_padding_mask=key_padding_mask)
         x = x + self.dropout1(attention_out) # residual
         encoder_out = self.encoder_ff(self.norm2(x))
-        return self.norm3(x + encoder_out)
+        return (x + encoder_out)
 
 
 class MHAModel(nn.Module):
@@ -69,7 +68,7 @@ class MHAModel(nn.Module):
         self.encoder_stack = nn.ModuleList([EncoderBlock(attention_dim, num_heads, dropout, dim_encoder_ff, bias, batch_first) for _ in range(num_layers)])
 
         self.final_classifiers = nn.ModuleDict({key:nn.Sequential(
-            nn.Linear(attention_dim, dim_classifier_ff_hidden, bias), nn.GELU(), nn.Dropout(dropout), nn.Linear(dim_classifier_ff_hidden, value, bias))\
+            nn.Linear(attention_dim, dim_classifier_ff_hidden, bias), nn.ReLU(), nn.Dropout(dropout), nn.Linear(dim_classifier_ff_hidden, value, bias))\
                 for key, value in classifiers_names_params.items()})
 
 
@@ -79,15 +78,15 @@ class MHAModel(nn.Module):
         embedded = self.embedings(x) # [B, S, E]
         embedded = self.positional_encoding(embedded)
         x = self.embed_to_encod_proj(embedded) # [B, S, D]
-        x = self.layer_norm(x)
         for layer in range(self.num_layers):
             x = self.encoder_stack[layer](x, key_padding_mask)
         # x [B, S, D]
+        x = self.layer_norm(x)
         logits = {}
         for key, value in self.classifiers_names_params.items():
             logits[key] = self.final_classifiers[key](x) # [B, S, num_classes_key]
 
         if apply_softmax:
-            for key, value in logits.items():
+            for key, _ in logits.items():
                 logits[key] = nn.functional.softmax(logits[key]/self.temperature, dim=-1)
         return logits
